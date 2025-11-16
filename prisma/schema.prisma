@@ -1,0 +1,157 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String
+  name         String?
+  role         Role           @default(USER)
+  tenantMemberships TenantUser[]
+  refreshTokens RefreshToken[]
+  subscriptions Subscription[] 
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model Tenant {
+  id            String         @id @default(cuid())
+  name          String
+  slug          String         @unique
+  owners        TenantUser[]
+  plans         Plan[]
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([slug])
+}
+
+model TenantUser {
+  id        String     @id @default(cuid())
+  user      User       @relation(fields: [userId], references: [id])
+  userId    String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  role      TenantRole @default(MEMBER)
+  joinedAt  DateTime   @default(now())
+
+  @@unique([userId, tenantId])
+}
+
+model Plan {
+  id           String   @id @default(cuid())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  name         String
+  priceCents   Int      // integer (paise)
+  currency     String   @default("INR")
+  interval     BillingInterval @default(MONTH)
+  active       Boolean  @default(true)
+  subscriptions Subscription[]
+  createdAt    DateTime @default(now())
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+model Subscription {
+  id              String   @id @default(cuid())
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId        String
+  plan            Plan     @relation(fields: [planId], references: [id])
+  planId          String
+  user            User?    @relation(fields: [userId], references: [id])
+  userId          String?
+  status          SubscriptionStatus @default(ACTIVE)
+  startDate       DateTime @default(now())
+  currentPeriodEnd DateTime
+  endedAt         DateTime?
+  invoices        Invoice[]
+  createdAt       DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId       String
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+  subscriptionId String?
+  amountCents    Int
+  currency       String   @default("INR")
+  status         InvoiceStatus @default(PENDING)
+  issuedAt       DateTime @default(now())
+  dueDate        DateTime?
+  paidAt         DateTime?
+  externalRef    String?  // provider payment id
+  createdAt      DateTime @default(now())
+  payments       Payment[] 
+
+  @@index([tenantId])
+  @@index([status])
+}
+model RefreshToken {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  tokenHash String
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+model Payment {
+  id            String   @id @default(cuid())
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id])
+  invoiceId     String
+  provider      String   // "stripe", "razorpay", "mock"
+  providerRef   String?
+  amountCents   Int
+  currency      String   @default("INR")
+  status        PaymentStatus @default(PENDING)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+}
+enum Role {
+  ADMIN
+  USER
+}
+enum TenantRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum BillingInterval {
+  MONTH
+  YEAR
+}
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  FAILED
+  VOID
+}
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
